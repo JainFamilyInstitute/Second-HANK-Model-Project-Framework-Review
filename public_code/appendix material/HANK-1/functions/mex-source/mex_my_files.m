@@ -1,0 +1,36 @@
+%mex -v FOPTIMFLAGS="\$FOPTIMFLAGS -O3" LDOPTIMFLAGS="\$LDOPTIMFLAGS -O3" FFLAGS="\$FFLAGS -fopenmp" LDFLAGS="\$LDFLAGS -fopenmp" EGM_Step5bK_mex.F90 -largeArrayDims -lmwblas
+%mex -v FOPTIMFLAGS="\$FOPTIMFLAGS -O3" LDOPTIMFLAGS="\$LDOPTIMFLAGS -O3" FFLAGS="\$FFLAGS" LDFLAGS="\$LDFLAGS" myfzero_mex.F90 -largeArrayDims 
+
+arch='mexmaci64'
+file='ValueFunction_mex'
+mex -v FOPTIMFLAGS="\$FOPTIMFLAGS -O3" LDOPTIMFLAGS="\$LDOPTIMFLAGS -O3" ...
+    FFLAGS="\$FFLAGS" LDFLAGS="\$LDFLAGS -L /opt/local/lib/gcc5/"...
+    ValueFunction_mex.F90 -largeArrayDims -lmwblas
+movefile([file '.' arch],['../mex/' file '.' arch])
+mex -v FOPTIMFLAGS="\$FOPTIMFLAGS -O3" LDOPTIMFLAGS="\$LDOPTIMFLAGS -O3" ...
+    FFLAGS="\$FFLAGS" LDFLAGS="\$LDFLAGS -L /opt/local/lib/gcc5/"...
+    EGM_Step5bK_BLAS_mex.F90 -largeArrayDims -lmwblas
+file='EGM_Step5bK_BLAS_mex'
+movefile([file '.' arch],['../mex/' file '.' arch])
+% mex -v -L/usr/local/MATLAB/R2015b/bin/glnxa64 -L/usr/local/MATLAB/R2015b/extern/include...
+
+
+mex -v FOPTIMFLAGS="\$FOPTIMFLAGS -O3" LDOPTIMFLAGS="\$LDOPTIMFLAGS -O3" ...
+    FFLAGS="\$FFLAGS" LDFLAGS="\$LDFLAGS -L /opt/local/lib/gcc5/"...
+    expect_mex.F90 -largeArrayDims -lmwblas 
+file='expect_mex'
+movefile([file '.' arch],['../mex/' file '.' arch])
+
+mex -v FOPTIMFLAGS="\$FOPTIMFLAGS -O3" LDOPTIMFLAGS="\$LDOPTIMFLAGS -O3" ...
+    FFLAGS="\$FFLAGS" LDFLAGS="\$LDFLAGS -L /opt/local/lib/gcc5/"...
+    JDIteration_mex.F90 -largeArrayDims -lmwblas
+file='JDIteration_mex'
+movefile([file '.' arch],['../mex/' file '.' arch])
+
+mex -v FOPTIMFLAGS="\$FOPTIMFLAGS -O3" LDOPTIMFLAGS="\$LDOPTIMFLAGS -O3" ...
+    FFLAGS="\$FFLAGS" LDFLAGS="\$LDFLAGS -L /opt/local/lib/gcc5/"...
+    EGM_Step5bK_BLAS_SS_mex.F90 -largeArrayDims -lmwblas
+file='EGM_Step5bK_BLAS_SS_mex'
+movefile([file '.' arch],['../mex/' file '.' arch])
+
+

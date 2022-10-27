@@ -1,0 +1,284 @@
+!
+!   EGM_Step5b_mex.F90
+!   
+!
+!   Created by Volker Tjaden on 30.07.13.
+!   Copyright 2013 __MyCompanyName__. All rights reserved.
+!
+#include "fintrf.h"
+
+!function [ psi_new ] =  EGM_Step5b(E_rhs_mu,m_n_star,psi_guess,grid,idm_n,P,TT,beta,nu,REP,nk,nMxnH)
+!----------------------------------------------------------------------------
+! Gateway routine
+!----------------------------------------------------------------------------
+
+
+subroutine mexFunction(nlhs,plhs,nrhs,prhs)
+    implicit none
+
+    ! Arguments in mexFunction
+    mwPointer  :: plhs(*), prhs(*)
+    integer    :: nlhs, nrhs
+
+! Function declarations
+    mwPointer   ::  mxGetPr, mxCreateNumericArray
+    mwPointer     mxGetDimensions
+	mwSize        mxGetNumberOfDimensions
+    integer(4)    mxClassIDFromClassName
+    integer(4)    mxGetString
+    
+
+! Pointers to input/output mxArrays:
+! Input
+    mwPointer  :: E_rhs_mu, m_n_star, psi_guess, grid_m, idm_n, P
+	mwPointer  :: P_M,P_vH
+    mwPointer  :: beta, nu, rep
+! Output
+    mwPointer  :: psi_new
+	
+! Array size information
+    mwSize    :: ns,nh,nm,nk,ncapH,ncapM
+	mwSize	  :: ndim
+	mwSize	  :: dims(5)
+	mwSize	  :: dims2(3)
+	integer(4)   :: classid
+    integer(4)   :: complexflag
+	
+!--------------------------------------------------------------------------------
+
+
+    E_rhs_mu    = mxGetPr(prhs(1))
+    m_n_star    = mxGetPr(prhs(2))
+    psi_guess   = mxGetPr(prhs(3))
+    grid_m      = mxGetPr(prhs(4))
+    idm_n       = mxGetPr(prhs(5))
+    P           = mxGetPr(prhs(6))
+    P_M         = mxGetPr(prhs(7))
+    P_vH        = mxGetPr(prhs(8))
+    beta        = mxGetPr(prhs(9))
+    nu          = mxGetPr(prhs(10))
+    REP         = mxGetPr(prhs(11))
+  
+	! Retrieve size information
+	ndim=mxGetNumberOfDimensions(prhs(1))
+	call mxCopyPtrToPtrArray(mxGetDimensions(prhs(1)), dims, ndim)
+    nm=dims(1)
+	nk=dims(2)
+	nh=dims(3)
+	ncapM=dims(4)
+	ncapH=dims(5)
+	call mxCopyPtrToPtrArray(mxGetDimensions(prhs(8)), dims2, mxGetNumberOfDimensions(prhs(8)))
+	ns=dims2(3)
+	nh=nh/ns
+	
+	! Create matrices for return arguments
+    classid 	= mxClassIDFromClassName('double')
+    complexflag = 0 
+	plhs(1) 	= mxCreateNumericArray(ndim, dims, classid, complexflag)
+	psi_new		= mxGetPr(plhs(1))
+	
+	call egm_step5b_aux(nm,nk,ns,nh,ncapH,ncapM,&
+		%val(psi_new),%val(e_rhs_mu),%val(m_n_star),%val(psi_guess),&
+		%val(grid_m),%val(idm_n),%val(P),%val(P_M),%val(P_vH),&
+		%val(beta),%val(nu),%val(rep))
+	
+end subroutine
+
+	subroutine egm_step5b_aux(nm,nk,ns,nh,ncapH,ncapM,&
+		psi_new,e_rhs_mu,m_n_star,psi_guess,grid_m,&
+		idm_n,P,P_M,P_vH,beta,nu,rep)
+		implicit none
+		mwSize, intent(in)  :: ns
+		mwSize, intent(in)  :: nh
+		mwSize, intent(in)  :: nm
+		mwSize, intent(in)  :: nk
+		mwSize, intent(in)  :: ncapH
+		mwSize, intent(in)  :: ncapM
+		real(8), intent(in)     :: beta,nu
+		integer(4),intent(in)   :: rep
+		real(8),intent(in)      :: e_rhs_mu(nm,nk,ns*nh,ncapM,ncapH)
+		real(8),intent(in)      :: grid_m(nm)
+		real(8),intent(in)      :: m_n_star(nm,nk,ns*nh,ncapM,ncapH)
+		real(8),intent(in)      :: psi_guess(nm,nk,ns*nh,ncapM,ncapH)
+		integer(4),intent(in)   :: idm_n(nm,nk,ns*nh,ncapM,ncapH)
+		real(8),intent(in)      :: P(ns*nh,ns*nh)
+		real(8),intent(in)      :: P_M(ncapM,ncapM,ns,ncapH)
+		real(8),intent(in)      :: P_vH(ncapH,ncapH,ns,ncapM)
+		real(8),intent(out)      :: psi_new(nm,nk,ns*nh,ncapM,ncapH)
+		
+		
+		 ! Local variables
+		integer(4)              :: i1,i2,i3,i4,i5
+		integer(4)              :: idx
+		real(8),allocatable     :: dist_m_n(:,:,:,:,:)
+		real(8),allocatable     :: mu_flow(:,:,:,:,:)
+		real(8),allocatable     :: aux(:,:,:,:,:)
+		real(8),allocatable     :: ww(:,:,:,:,:)
+		
+		! 0. Allocate local arrays    
+		allocate(dist_m_n(nm,nk,ns*nh,ncapM,ncapH))
+		allocate(mu_flow(nm,nk,ns*nh,ncapM,ncapH))
+		allocate(aux(nm,nk,ns*nh,ncapM,ncapH))
+		allocate(ww(nm,nk,ns*nh,ncapM,ncapH))
+		
+		! 1. Calculate weight on right neighbour in interpolation
+		do i1=1,ncapH
+			do i2=1,ncapM
+				do i3=1,ns*nh
+					do i4=1,nk
+!$OMP PARALLEL DO SHARED(idm_n,dist_m_n,m_n_star,grid_m,i1,i2,i3,i4) PRIVATE(idx,i5)  
+						do i5=1,nm
+ 
+
+							idx=idm_n(i5,i4,i3,i2,i1)
+							dist_m_n(i5,i4,i3,i2,i1)=&
+								(m_n_star(i5,i4,i3,i2,i1)-grid_m(idx))/(grid_m(idx+1)-grid_m(idx))
+						end do
+!$OMP END PARALLEL DO	
+					end do
+				end do
+			end do
+		end do
+
+
+		! 2. Interpolate e_rhs_mu to obtain mu_flow
+		call interpolate_m_n(nm,nk,ns,nh,ncapH,ncapM,&
+			mu_flow,e_rhs_mu,dist_m_n,idm_n)
+		
+		! 3. First Howard step / generate ww
+		call expectations(nm,nk,ns,nh,ncapH,ncapM,&
+				aux,psi_guess,P,P_M,P_vH,beta,nu)
+		call interpolate_m_n(nm,nk,ns,nh,ncapH,ncapM,&
+			ww,aux,dist_m_n,idm_n)
+		
+		ww=mu_flow+ww
+		
+		! 4. Howard's iteration steps
+		
+		do i1=1,rep
+			call expectations(nm,nk,ns,nh,ncapH,ncapM,&
+				aux,ww,P,P_M,P_vH,beta,nu)
+			call interpolate_m_n(nm,nk,ns,nh,ncapH,ncapM,&
+				ww,aux,dist_m_n,idm_n)
+			ww=mu_flow+ww
+		end do
+    
+		psi_new=ww
+		
+		deallocate(dist_m_n,mu_flow,aux,ww)	
+	end subroutine
+	
+	! subroutines: one for expectations/interpolation (first sh then PM)
+     subroutine interpolate_m_n(nm,nk,ns,nh,ncapH,ncapM,&
+        output,input,dist_m_n,idm_n)
+        implicit none
+        mwSize, intent(in)  :: ns
+        mwSize, intent(in)  :: nh
+        mwSize, intent(in)  :: nm
+        mwSize, intent(in)  :: nk
+        mwSize, intent(in)  :: ncapH
+        mwSize, intent(in)  :: ncapM
+        real(8),intent(out)     :: output(nm,nk,ns*nh,ncapM,ncapH)
+        real(8),intent(in)      :: input(nm,nk,ns*nh,ncapM,ncapH)
+        real(8),intent(in)      :: dist_m_n(nm,nk,ns*nh,ncapM,ncapH)
+        integer(4),intent(in)   :: idm_n(nm,nk,ns*nh,ncapM,ncapH)
+        ! local variables
+        integer(4)              :: i1,i2,i3,i4,i5
+        integer(4)              :: idx
+
+      
+        ! interpolation over policies  
+        do i1=1,ncapH
+            do i2=1,ncapM
+                do i3=1,ns*nh
+                    do i4=1,nk
+!$OMP PARALLEL DO SHARED(input,dist_m_n,output,i1,i2,i3,i4) PRIVATE(idx,i5) 
+                        do i5=1,nm
+                            idx=idm_n(i5,i4,i3,i2,i1)
+                            output(i5,i4,i3,i2,i1)=input(idx,i4,i3,i2,i1)+&
+                                dist_m_n(i5,i4,i3,i2,i1)*(input(idx+1,i4,i3,i2,i1)-input(idx,i4,i3,i2,i1))
+                        end do
+!$OMP END PARALLEL DO
+                    end do
+                end do
+            end do
+        end do
+
+    end subroutine
+
+
+	
+	subroutine expectations(nm,nk,ns,nh,ncapH,ncapM,&
+		output,input,P,P_M,P_vH,beta,nu)
+		implicit none
+		mwSize, intent(in)  :: ns
+		mwSize, intent(in)  :: nh
+		mwSize, intent(in)  :: nm
+		mwSize, intent(in)  :: nk
+		mwSize, intent(in)  :: ncapH
+		mwSize, intent(in)  :: ncapM
+		real(8),intent(out)     :: output(nm,nk,ns*nh,ncapM,ncapH)
+		real(8),intent(in)      :: input(nm,nk,ns*nh,ncapM,ncapH)
+		real(8),intent(in)      :: P(ns*nh,ns*nh)
+		real(8),intent(in)      :: P_M(ncapM,ncapM,ns,ncapH)
+		real(8),intent(in)      :: P_vH(ncapH,ncapH,ns,ncapM)
+		real(8), intent(in)     :: beta,nu
+		! local variables
+		integer(4)              :: i1,i2,i3,i4,i5,i6,inext,Hnext,Mnext
+		integer(4)              :: shind
+		real(8)                 :: trprob,mprob,hprob
+		real(8)                 :: temp(nm,nk,ns*nh,ncapM,ncapH)
+		
+		temp=0.d0
+		output=0.d0
+		
+		! 1. Take expectations over sxh
+
+		do i1=1,ncapH
+			do i2=1,ncapM
+				do i3=1,ns*nh
+					do inext=1,ns*nh
+						trprob=P(i3,inext)
+						do i4=1,nk
+!$OMP PARALLEL DO SHARED(temp,input,trprob,i1,i2,i3,i4,inext) PRIVATE(i5)  
+							do i5=1,nm
+								temp(i5,i4,i3,i2,i1)=&
+								temp(i5,i4,i3,i2,i1)+trprob*input(i5,i4,inext,i2,i1)
+							end do
+!$OMP END PARALLEL DO	
+						end do
+					end do
+				end do
+			end do
+		end do
+
+	
+		! 2. Transitions in M and varH
+
+		do i1=1,ncapH
+			do i2=1,ncapM
+				do i3=1,ns
+					do Hnext=1,ncapH
+						hprob=P_vH(i1,Hnext,i3,i2)
+						do Mnext=1,ncapM
+							mprob=P_M(i2,Mnext,i3,i1)
+							do i4=1,nh
+								shind=ns*(i4-1)+i3
+								do i5=1,nk
+!$OMP PARALLEL DO SHARED(temp,output,P_vH,P_M,shind,i1,i2,i3,i4,i5,Hnext,Mnext,hprob,mprob) PRIVATE(i6)  
+									do i6=1,nm
+										output(i6,i5,shind,i2,i1)=output(i6,i5,shind,i2,i1)+&
+											hprob*mprob*temp(i6,i5,shind,Mnext,Hnext)
+									end do
+!$OMP END PARALLEL DO	
+								end do
+							end do
+						end do
+					end do
+				end do
+			end do
+		end do
+
+	
+		output=beta*(1.d0-nu)*output
+        end subroutine
