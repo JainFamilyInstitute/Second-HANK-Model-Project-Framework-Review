@@ -1,0 +1,316 @@
+!
+!   EGM_Step5b_mex.F90
+!
+!
+!   Created by Volker Tjaden on 30.07.13.
+!   Copyright 2013 __MyCompanyName__. All rights reserved.
+!
+#include "fintrf.h"
+
+!function [V,Va,Vn] =  Value_Function(id_m_n,m_n_star,id_m_a,m_a_star,id_k,k_star,c_a_star,c_n_star,AProb,grid_m,grid_k,P,P_M,P_K,beta,sigma,logit1,logit2)
+!----------------------------------------------------------------------------
+! Gateway routine
+!----------------------------------------------------------------------------
+
+
+subroutine mexFunction(nlhs,plhs,nrhs,prhs)
+  implicit none
+
+  ! Arguments in mexFunction
+  mwPointer  :: plhs(*), prhs(*)
+  integer    :: nlhs, nrhs
+
+  ! Function declarations
+  mwPointer   ::  mxGetPr, mxCreateNumericArray
+  mwPointer     mxGetDimensions
+  mwSize        mxGetNumberOfDimensions
+  integer(4)    mxClassIDFromClassName
+  integer(4)    mxGetString
+
+
+  ! Pointers to input/output mxArrays:
+  ! Input
+  mwPointer  :: id_m_n,m_n_star,id_m_a,m_a_star,id_k,k_star,c_a_star,c_n_star
+  mwPointer  :: AProb,grid_m,grid_k,P,P_M,P_K,beta,sigma,logit1,logit2
+  ! Output
+  mwPointer  :: V,Va,Vn
+
+  ! Array size information
+  mwSize    :: ns,nh,nm,nk,ncapK,ncapM
+  mwSize	  :: ndim
+  mwSize	  :: dims(5)
+  mwSize	  :: dims2(3)
+  integer(4)   :: classid
+  integer(4)   :: complexflag
+
+  !--------------------------------------------------------------------------------
+
+
+  id_m_n    = mxGetPr(prhs(1))
+  m_n_star = mxGetPr(prhs(2))
+  id_m_a    = mxGetPr(prhs(3))
+  m_a_star = mxGetPr(prhs(4))
+  id_k     = mxGetPr(prhs(5))
+  k_star   = mxGetPr(prhs(6))
+  c_a_star = mxGetPr(prhs(7))
+  c_n_star = mxGetPr(prhs(8))
+  AProb    = mxGetPr(prhs(9))
+  grid_m   = mxGetPr(prhs(10))
+  grid_k   = mxGetPr(prhs(11))
+  P        = mxGetPr(prhs(12))
+  P_M      = mxGetPr(prhs(13))
+  P_K      = mxGetPr(prhs(14))
+  beta     = mxGetPr(prhs(15))
+  sigma    = mxGetPr(prhs(16))
+  logit1   = mxGetPr(prhs(17))
+  logit2   = mxGetPr(prhs(18))
+
+  ! Retrieve size information
+  ndim = mxGetNumberOfDimensions(prhs(1))
+  call mxCopyPtrToPtrArray(mxGetDimensions(prhs(1)), dims, ndim)
+  nm      = dims(1)
+  nk      = dims(2)
+  nh      = dims(3)
+  ncapM   = dims(4)
+  ncapK   = dims(5)
+  call mxCopyPtrToPtrArray(mxGetDimensions(prhs(14)), dims2, mxGetNumberOfDimensions(prhs(14)))
+  ns      = dims2(3)
+  nh      = nh/ns
+
+  ! Create matrices for return arguments
+  classid 	= mxClassIDFromClassName('double')
+  complexflag = 0
+  plhs(1) = mxCreateNumericArray(ndim, dims, classid, complexflag)
+  V		= mxGetPr(plhs(1))
+  plhs(2) = mxCreateNumericArray(ndim, dims, classid, complexflag)
+  Va		= mxGetPr(plhs(2))
+  plhs(3) = mxCreateNumericArray(ndim, dims, classid, complexflag)
+  Vn		= mxGetPr(plhs(3))
+
+
+  call Val_aux(nm,nk,ns,nh,ncapK,ncapM,&
+  %val(V),%val(Va),%val(Vn),%val(id_m_n),%val(m_n_star),%val(id_m_a),%val(m_a_star),%val(id_k),&
+  %val(k_star),%val(c_a_star),%val(c_n_star),%val(AProb),%val(grid_m),%val(grid_k),%val(P),&
+  %val(P_M),%val(P_K),%val(beta),%val(sigma),%val(logit1),%val(logit2))
+
+end subroutine
+
+subroutine Val_aux(nm,nk,ns,nh,ncapK,ncapM,&
+  V,Va,Vn,id_m_n,m_n_star,id_m_a,m_a_star,id_k,k_star,c_a_star,&
+  c_n_star,AProb,grid_m,grid_k,P,P_M,P_K,beta,sigma,logit1,logit2)
+  implicit none
+  ! Input Variables
+  mwSize, intent(in)  :: ns,nh,nm,nk,ncapK,ncapM ! Size of Problem
+  real(8), intent(in)     :: beta,sigma,logit1,logit2 ! Scalar Parameters: Discount, Risk Aversion, Logit Params
+  integer(4),intent(in)   :: id_m_n(nm,nk,ns*nh,ncapM,ncapK), id_m_a(nm,nk,ns*nh,ncapM,ncapK) ! Indices of liquid asset (LA) policies
+  real(8),intent(in)      :: m_n_star(nm,nk,ns*nh,ncapM,ncapK), m_a_star(nm,nk,ns*nh,ncapM,ncapK) ! LA Policies as Real Numbers
+  integer(4),intent(in)   :: id_k(nm,nk,ns*nh,ncapM,ncapK) ! Indices of illiquid asset policies
+  real(8),intent(in)      :: k_star(nm,nk,ns*nh,ncapM,ncapK) ! ILA Policies as Real Numbers
+  real(8),intent(in)      :: c_a_star(nm,nk,ns*nh,ncapM,ncapK),c_n_star(nm,nk,ns*nh,ncapM,ncapK) ! C Policies as Real Numbers
+  real(8),intent(in)      :: AProb(nm,nk,ns*nh,ncapM,ncapK) ! Adj Probabilities as Real Numbers
+  real(8),intent(in)      :: grid_m(nm),grid_k(nk) !Grids
+  real(8),intent(in)      :: P(ns*nh,ns*nh) !Income transitions
+  real(8),intent(in)      :: P_M(ncapM,ncapM,ns,ncapK) !LA Aggregate transitions
+  real(8),intent(in)      :: P_K(ncapK,ncapK,ns,ncapM) !ILA Aggregate transitions
+  !Output Variables
+  real(8),intent(out)      :: V(nm,nk,ns*nh,ncapM,ncapK), Va(nm,nk,ns*nh,ncapM,ncapK), Vn(nm,nk,ns*nh,ncapM,ncapK)
+
+
+  ! Local variables
+  integer(4) :: i1,i2,i3,i4,i5
+  integer(4) :: idx,iteration
+  real(8)    :: dist_m_n(nm,nk,ns*nh,ncapM,ncapK), dist_m_a(nm,nk,ns*nh,ncapM,ncapK)
+  real(8)    :: dist_k(nm,nk,ns*nh,ncapM,ncapK)
+  real(8)    :: EV(nm,nk,ns*nh,ncapM,ncapK), u(nm,nk,ns*nh,ncapM,ncapK), Vnew(nm,nk,ns*nh,ncapM,ncapK),V2(nm,nk,ns*nh,ncapM,ncapK)
+  real(8)    :: aux(nm,nk,ns*nh,ncapM,ncapK), aux_a(nm,nk,ns*nh,ncapM,ncapK), aux_n(nm,nk,ns*nh,ncapM,ncapK)
+  real(8)	   :: aux1, aux2, dist
+
+
+
+  ! 1. Calculate weight on right neighbour in interpolation
+  call makeweight(nm,nk,ns,nh,ncapK,ncapM,nk,id_k,k_star,grid_k,dist_k)
+  call makeweight(nm,nk,ns,nh,ncapK,ncapM,nm,id_m_a,m_a_star,grid_m,dist_m_a)
+  call makeweight(nm,nk,ns,nh,ncapK,ncapM,nm,id_m_n,m_n_star,grid_m,dist_m_n)
+
+  ! expected period felicity under the optimal policy. Check to exploit that sigma is integer
+  aux_n = (c_n_star**(1.0d+0-sigma))/(1.0d+0-sigma)
+  aux_a = (c_a_star**(1.0d+0-sigma))/(1.0d+0-sigma)
+  u = (1.0d+0-AProb) * aux_n + AProb * aux_a &
+  - logit2*((1.0d+0-AProb)*log(1.0d+0-AProb) + AProb*log(AProb)) - logit1*AProb !Felicity minus adjustment costs
+
+  V=u
+  dist = 1.0d+3
+  iteration=1
+  do while (dist > 1.0d-8 .AND. iteration<1000)
+    call expectations(nm,nk,ns,nh,ncapK,ncapM,EV,V,P,P_M,P_K,beta,AProb)
+    call interpolate_n(nm,nk,ns,nh,ncapK,ncapM,aux_n,EV,dist_m_n,id_m_n)
+    call interpolate_a(nm,nk,ns,nh,ncapK,ncapM,aux_a,EV,dist_m_a,id_m_a, dist_k,id_k)
+    Vnew = u+beta*(AProb*aux_a+(1.0d0-AProb)*aux_n)
+    dist = maxval(abs(Vnew-V))
+    V=Vnew
+    iteration=iteration+1
+  end do
+
+  Va = beta*aux_a
+  Vn = beta*aux_n
+
+end subroutine
+
+! subroutines: one for expectations/interpolation (first sh then PM)
+subroutine expectations(nm,nk,ns,nh,ncapK,ncapM,&
+  output,input,P,P_M,P_K,beta,AProb)
+  !Use nag_library, Only: f01ctf
+  implicit none
+  mwSize, intent(in)      :: ns, nh, nm, nk, ncapK, ncapM
+  real(8),intent(out)     :: output(nm,nk,ns*nh,ncapM,ncapK)
+  real(8),intent(in)      :: input(nm,nk,ns*nh,ncapM,ncapK)
+  real(8),intent(in)      :: P(ns*nh,ns*nh)
+  real(8),intent(in)      :: P_M(ncapM,ncapM,ns,ncapK)
+  real(8),intent(in)      :: P_K(ncapK,ncapK,ns,ncapM)
+  real(8), intent(in)     :: beta
+  real(8),intent(in)      :: AProb(nm,nk,ns*nh,ncapM,ncapK)
+
+  ! local variables
+  integer(4)              :: i1,i2,i3,i4,i5,i6,inext,Knext,Mnext
+  integer(4)              :: shind !,ifail
+  real(8)                 :: trprob,mprob,kprob, auxaux(nm*nk), auxaux2(nm*nk)
+  real(8)                 :: temp(nm*nk,ns*nh,ncapM,ncapK), aux(nm*nk,ns*nh,ncapM,ncapK)
+
+
+  temp=0.d0
+  output=0.d0
+
+  ! 1. Take expectations over sxh
+  aux=reshape(input,(/nm*nk,ns*nh,ncapM,ncapK/))
+  do i1=1,ncapK
+    do i2=1,ncapM
+      call DGEMM('N','T', nk*nm, ns*nh,ns*nh ,1.0d+0, aux(:,:,i2,i1),nk*nm, P, ns*nh,0.d0, temp(:,:,i2,i1), nk*nm)
+    end do
+  end do
+
+  ! 2. Transitions in M and varH
+  aux=0.d0
+  do i1=1,ncapK
+    do i2=1,ncapM
+      do i4=1,nh
+        do i3=1,ns
+          shind=ns*(i4-1)+i3
+          auxaux=0.d0
+          do Knext=1,ncapK
+            kprob=P_K(i1,Knext,i3,i2)
+            do Mnext=1,ncapM
+              mprob=P_M(i2,Mnext,i3,i1)
+              auxaux2=temp(:,shind,Mnext,Knext)
+              auxaux=kprob*mprob*auxaux2+auxaux
+            end do
+          end do
+          aux(:,shind,i2,i1)=auxaux
+        end do
+      end do
+
+    end do
+  end do
+  output=reshape(aux,(/nm,nk,ns*nh,ncapM,ncapK/))
+end subroutine
+
+subroutine interpolate_n(nm,nk,ns,nh,ncapK,ncapM,output,input,dist_m_n,id_m_n)
+  implicit none
+  mwSize, intent(in)  :: ns
+  mwSize, intent(in)  :: nh
+  mwSize, intent(in)  :: nm
+  mwSize, intent(in)  :: nk
+  mwSize, intent(in)  :: ncapK
+  mwSize, intent(in)  :: ncapM
+  real(8),intent(out)     :: output(nm,nk,ns*nh,ncapM,ncapK)
+  real(8),intent(in)      :: input(nm,nk,ns*nh,ncapM,ncapK)
+  real(8),intent(in)      :: dist_m_n(nm,nk,ns*nh,ncapM,ncapK)
+  integer(4),intent(in)   :: id_m_n(nm,nk,ns*nh,ncapM,ncapK)
+  ! local variables
+  integer(4)              :: i1,i2,i3,i4,i5
+  integer(4)              :: idx
+  real(8)					:: aux1, aux2
+  ! interpolation over policies
+  do i1=1,ncapK
+    do i2=1,ncapM
+      do i3=1,ns*nh
+        do i4=1,nk
+          do i5=1,nm
+            idx=id_m_n(i5,i4,i3,i2,i1)
+            aux1=input(idx,i4,i3,i2,i1)
+            aux2=input(idx+1,i4,i3,i2,i1)
+            output(i5,i4,i3,i2,i1)=aux1+&
+            dist_m_n(i5,i4,i3,i2,i1)*(aux2-aux1)
+          end do
+        end do
+      end do
+    end do
+  end do
+end subroutine
+
+subroutine interpolate_a(nm,nk,ns,nh,ncapK,ncapM,output,input,dist_m_a,id_m_a,dist_k,id_k)
+  implicit none
+  mwSize, intent(in)  :: ns
+  mwSize, intent(in)  :: nh
+  mwSize, intent(in)  :: nm
+  mwSize, intent(in)  :: nk
+  mwSize, intent(in)  :: ncapK
+  mwSize, intent(in)  :: ncapM
+  real(8),intent(out)     :: output(nm,nk,ns*nh,ncapM,ncapK)
+  real(8),intent(in)      :: input(nm,nk,ns*nh,ncapM,ncapK)
+  real(8),intent(in)      :: dist_m_a(nm,nk,ns*nh,ncapM,ncapK),dist_k(nm,nk,ns*nh,ncapM,ncapK)
+  integer(4),intent(in)   :: id_k(nm,nk,ns*nh,ncapM,ncapK)
+  integer(4),intent(in)   :: id_m_a(nm,nk,ns*nh,ncapM,ncapK)
+  ! local variables
+  integer(4)              :: i1,i2,i3,i4,i5
+  integer(4)              :: idxm,idxk
+  real(8)					:: auxm1k1, auxm2k1,auxm1k2,auxm2k2
+  ! interpolation over policies
+  do i1=1,ncapK
+    do i2=1,ncapM
+      do i3=1,ns*nh
+        do i4=1,nk
+          do i5=1,nm
+            idxm=id_m_a(i5,i4,i3,i2,i1)
+            idxk=id_k(i5,i4,i3,i2,i1)
+            auxm1k1=input(idxm,idxk,i3,i2,i1)
+            auxm1k2=input(idxm,idxk+1,i3,i2,i1)
+            auxm2k1=input(idxm+1,idxk,i3,i2,i1)
+            auxm2k2=input(idxm+1,idxk+1,i3,i2,i1)
+            output(i5,i4,i3,i2,i1) = auxm1k1 *(1.0d+0-dist_m_a(i5,i4,i3,i2,i1))*(1.0d+0-dist_k(i5,i4,i3,i2,i1))+ &
+            auxm2k1 *(dist_m_a(i5,i4,i3,i2,i1))*(1.0d+0-dist_k(i5,i4,i3,i2,i1))+ &
+            auxm1k2 *(1.0d+0-dist_m_a(i5,i4,i3,i2,i1))*(dist_k(i5,i4,i3,i2,i1))+ &
+            auxm2k2 *(dist_m_a(i5,i4,i3,i2,i1))*(dist_k(i5,i4,i3,i2,i1))
+          end do
+        end do
+      end do
+    end do
+  end do
+end subroutine
+subroutine  makeweight(nm,nk,ns,nh,ncapK,ncapM,nx,id_x,xstar,gridx,dist)
+  ! Calculate weights for linear interpolation
+  implicit none
+  mwSize, intent(in)  :: ns, nh, nm, nk, ncapK, ncapM, nx
+  integer(4), intent(in) :: id_x(nm,nk,ns*nh,ncapM,ncapK)
+  real(8), intent(in) :: xstar(nm,nk,ns*nh,ncapM,ncapK)
+  real(8), intent(in) :: gridx(nx)
+  ! Output variables
+  real(8), intent(out) :: dist(nm,nk,ns*nh,ncapM,ncapK)
+  !Local variables
+  integer(4) :: i1,i2,i3,i4,i5, idx
+  real(8)   :: aux1, aux2
+  do i1=1,ncapK
+    do i2=1,ncapM
+      do i3=1,ns*nh
+        do i4=1,nk
+          do i5=1,nm
+            idx  = id_x(i5,i4,i3,i2,i1)
+            aux1 = gridx(idx)
+            aux2 = gridx(idx+1)
+            dist(i5,i4,i3,i2,i1) = (xstar(i5,i4,i3,i2,i1)-aux1)/(aux2-aux1)
+          end do
+        end do
+      end do
+    end do
+  end do
+
+end subroutine
