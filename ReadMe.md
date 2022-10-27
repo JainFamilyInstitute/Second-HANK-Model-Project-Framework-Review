@@ -1,1 +1,1 @@
-
+To run the code please refer to the file README.pdf by Luetticke. Certain parameters have been changed to calibrate to an economy where the steady state rate of inflation is 2% instead of 0%. Certain functions have been changed to accomodate the changes in the Taylor Rule. 
